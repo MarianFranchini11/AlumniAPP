@@ -296,6 +296,8 @@ function loadData(){
       state.data = defaultData();
       persist();
     }
+    if(!state.data.players) state.data.players = [];
+    if(!state.data.sessions) state.data.sessions = [];
     if(!state.data.attendance) state.data.attendance = {};
     if(!state.data.dues) state.data.dues = {};
     if(!state.data.adminPin) state.data.adminPin = DEFAULT_PIN;
