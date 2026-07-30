@@ -223,6 +223,21 @@
 
 <div id="modal-root"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  var firebaseConfig = {
+    apiKey: "AIzaSyAeGPypmirbxPIWuVG23rOSFXMIie4QVf4",
+    authDomain: "alumniapp-cf7bd.firebaseapp.com",
+    databaseURL: "https://alumniapp-cf7bd-default-rtdb.firebaseio.com",
+    projectId: "alumniapp-cf7bd",
+    storageBucket: "alumniapp-cf7bd.firebasestorage.app",
+    messagingSenderId: "140777104022",
+    appId: "1:140777104022:web:7506fdc466053237c6d8b7"
+  };
+  firebase.initializeApp(firebaseConfig);
+  var teamDataRef = firebase.database().ref("team-data");
+</script>
 <script>
 (function(){
 
@@ -270,27 +285,31 @@ function defaultData(){
 
 function monthKeyNow(){ return todayISO().slice(0,7); }
 
-async function loadData(){
-  try{
-    var res = await window.storage.get("team-data", true);
-    if(res && res.value){
-      state.data = JSON.parse(res.value);
-      if(!state.data.attendance) state.data.attendance = {};
-      if(!state.data.dues) state.data.dues = {};
-      if(!state.data.adminPin) state.data.adminPin = DEFAULT_PIN;
+var suppressNextRemoteRender = false;
+
+function loadData(){
+  teamDataRef.on("value", function(snapshot){
+    var val = snapshot.val();
+    if(val){
+      state.data = val;
     } else {
       state.data = defaultData();
-      await persist();
+      persist();
     }
-  }catch(e){
+    if(!state.data.attendance) state.data.attendance = {};
+    if(!state.data.dues) state.data.dues = {};
+    if(!state.data.adminPin) state.data.adminPin = DEFAULT_PIN;
+    render();
+  }, function(err){
+    console.error("No se pudo conectar con la base de datos", err);
     state.data = defaultData();
-  }
-  render();
+    render();
+  });
 }
 
 async function persist(){
   try{
-    await window.storage.set("team-data", JSON.stringify(state.data), true);
+    await teamDataRef.set(state.data);
   }catch(e){
     console.error("No se pudo guardar", e);
   }
