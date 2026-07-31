@@ -117,6 +117,7 @@
     width:38px; height:38px; border-radius:50%; background:var(--pitch);
     color:#fff; display:flex; align-items:center; justify-content:center;
     font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; flex:none;
+    background-size:cover; background-position:center;
   }
   .p-info{ flex:1; min-width:0; }
   .p-name{ font-weight:500; font-size:14.5px; }
@@ -285,6 +286,36 @@ function defaultData(){
 
 function monthKeyNow(){ return todayISO().slice(0,7); }
 
+// Solo entrenamientos con fecha anterior a hoy (para Semana/Histórico: no cuentan los programados a futuro)
+function pastSessions(){
+  var today = todayISO();
+  return state.data.sessions.filter(function(s){ return s.date < today; });
+}
+
+function daysUntil(dateStr){
+  var today = new Date(todayISO()+"T00:00:00");
+  var target = new Date(dateStr+"T00:00:00");
+  return Math.round((target - today) / 86400000);
+}
+
+function monthDayLabel(iso){
+  var parts = iso.split("-");
+  if(parts.length !== 3) return iso;
+  return parts[2] + "/" + parts[1] + "/" + parts[0];
+}
+
+// Próximos 5 vencimientos de ficha médica (ordenados por fecha). "alert" = vence en <=30 días o ya venció.
+function getUpcomingMedicalAlerts(){
+  return state.data.players
+    .filter(function(p){ return p.vencimientoFicha; })
+    .map(function(p){
+      var days = daysUntil(p.vencimientoFicha);
+      return { player:p, days:days, alert: days <= 30 };
+    })
+    .sort(function(a,b){ return a.days - b.days; })
+    .slice(0,5);
+}
+
 var suppressNextRemoteRender = false;
 
 function loadData(){
@@ -422,6 +453,15 @@ function showEditPlayerModal(playerId){
             }).join('') +
           '</select></div>' +
         '</div>' +
+        '<p class="section-title" style="margin-top:14px;">Ficha médica y contacto</p>' +
+        '<div class="form-grid">' +
+          '<div><label class="field">DNI</label><input id="ep-dni" value="' + escapeHtml(p.dni || "") + '" inputmode="numeric"></div>' +
+          '<div><label class="field">Fecha de nacimiento</label><input id="ep-nac" type="date" value="' + escapeHtml(p.nacimiento || "") + '"></div>' +
+          '<div><label class="field">Obra social</label><input id="ep-obra" value="' + escapeHtml(p.obraSocial || "") + '"></div>' +
+          '<div><label class="field">Teléfono</label><input id="ep-tel" value="' + escapeHtml(p.telefono || "") + '" inputmode="tel"></div>' +
+          '<div><label class="field">Vto. ficha médica</label><input id="ep-venc" type="date" value="' + escapeHtml(p.vencimientoFicha || "") + '"></div>' +
+          '<div><label class="field">Observación</label><input id="ep-obs" value="' + escapeHtml(p.observacionFicha || "") + '"></div>' +
+        '</div>' +
         '<div class="modal-actions">' +
           '<button class="btn" id="ep-cancel">Cancelar</button>' +
           '<button class="btn btn-primary" id="ep-save">Guardar</button>' +
@@ -448,6 +488,12 @@ function showEditPlayerModal(playerId){
     p.number = document.getElementById("ep-number").value.trim();
     p.position = document.getElementById("ep-pos").value;
     p.photo = state.tempEditPhoto;
+    p.dni = document.getElementById("ep-dni").value.trim();
+    p.nacimiento = document.getElementById("ep-nac").value;
+    p.obraSocial = document.getElementById("ep-obra").value.trim();
+    p.telefono = document.getElementById("ep-tel").value.trim();
+    p.vencimientoFicha = document.getElementById("ep-venc").value;
+    p.observacionFicha = document.getElementById("ep-obs").value.trim();
     await persist();
     closeModal();
     render();
@@ -484,6 +530,34 @@ function renderPlantilla(){
   var d = state.data;
   var html = '';
   html += '<div class="banner-info">Los datos se guardan compartidos: cualquiera que abra este artefacto ve la misma plantilla y asistencia.</div>';
+
+  var alerts = getUpcomingMedicalAlerts();
+  if(alerts.length){
+    html += '<div class="card">' +
+      '<p class="section-title">⚕️ Próximos vencimientos de ficha médica</p>';
+    alerts.forEach(function(a){
+      var label = a.days < 0 ? ('Venció hace ' + Math.abs(a.days) + ' día' + (Math.abs(a.days)===1?'':'s'))
+        : a.days === 0 ? 'Vence hoy'
+        : ('Vence en ' + a.days + ' día' + (a.days===1?'':'s'));
+      html += '<div class="player-row">' +
+        '<div class="jersey" style="' + (a.player.photo ? 'background-image:url('+a.player.photo+');' : '') + '">' + (a.player.photo ? '' : (a.player.number || "-")) + '</div>' +
+        '<div class="p-info"><div class="p-name">' + escapeHtml(a.player.name) + '</div>' +
+          '<div class="p-pos">' + monthDayLabel(a.player.vencimientoFicha) + '</div></div>' +
+        '<span class="status-pill ' + (a.alert ? 'status-risk' : 'status-yellow') + '">' + label + '</span>' +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  if(isAdmin()){
+    html += '<div class="card">' +
+      '<p class="section-title">Importar lista de buena fe</p>' +
+      '<p class="hint">Carga o actualiza jugadores con DNI, obra social, teléfono y vencimiento de ficha médica desde la planilla del club. No borra a los que ya están cargados.</p>' +
+      '<button class="btn" id="import-buenafe-btn">Importar / actualizar datos</button>' +
+      (state.importMessage ? '<div class="hint" style="margin-top:6px;">' + escapeHtml(state.importMessage) + '</div>' : '') +
+    '</div>';
+    state.importMessage = null;
+  }
 
   if(isAdmin()){
     html += '<div class="card">' +
@@ -649,11 +723,12 @@ function renderSessionEditor(sessionId){
 // ---------- Estado semanal ----------
 function computeWeeklyStatus(){
   var d = state.data;
+  var past = pastSessions();
   var thisWeek = weekStartISO(todayISO());
-  var sessionsThisWeek = d.sessions.filter(function(s){ return weekStartISO(s.date) === thisWeek; });
+  var sessionsThisWeek = past.filter(function(s){ return weekStartISO(s.date) === thisWeek; });
   var expected = 2;
 
-  var sortedAll = d.sessions.slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
+  var sortedAll = past.slice().sort(function(a,b){ return a.date.localeCompare(b.date); });
 
   return d.players.map(function(p){
     var presentThisWeek = sessionsThisWeek.filter(function(s){ return (d.attendance[s.id]||[]).indexOf(p.id) > -1; }).length;
@@ -702,7 +777,7 @@ function renderSemana(){
   }
   var rows = computeWeeklyStatus();
   var thisWeek = weekStartISO(todayISO());
-  var sessionsThisWeek = d.sessions.filter(function(s){ return weekStartISO(s.date) === thisWeek; });
+  var sessionsThisWeek = pastSessions().filter(function(s){ return weekStartISO(s.date) === thisWeek; });
 
   var html = '<div class="card">' +
     '<p class="section-title">Semana actual</p>' +
@@ -727,7 +802,7 @@ function renderSemana(){
   });
   html += '</div>';
 
-  var totalSessions = d.sessions.length;
+  var totalSessions = pastSessions().length;
   var greenCount = rows.filter(function(r){return r.status==="green";}).length;
   html += '<div class="card">' +
     '<p class="section-title">Resumen del equipo</p>' +
@@ -749,10 +824,11 @@ function monthLabel(mk){
 
 function computeHistoricalStats(){
   var d = state.data;
-  var totalSessions = d.sessions.length;
+  var past = pastSessions();
+  var totalSessions = past.length;
 
   var perPlayer = d.players.map(function(p){
-    var present = d.sessions.filter(function(s){ return (d.attendance[s.id]||[]).indexOf(p.id) > -1; }).length;
+    var present = past.filter(function(s){ return (d.attendance[s.id]||[]).indexOf(p.id) > -1; }).length;
     var pct = totalSessions ? Math.round((present/totalSessions)*100) : 0;
     return { player:p, present:present, total:totalSessions, pct:pct };
   }).sort(function(a,b){ return b.pct - a.pct; });
@@ -760,10 +836,10 @@ function computeHistoricalStats(){
   var teamAvg = perPlayer.length ? Math.round(perPlayer.reduce(function(s,r){ return s+r.pct; },0)/perPlayer.length) : 0;
 
   var monthKeysSet = {};
-  d.sessions.forEach(function(s){ monthKeysSet[s.date.slice(0,7)] = true; });
+  past.forEach(function(s){ monthKeysSet[s.date.slice(0,7)] = true; });
   var monthKeys = Object.keys(monthKeysSet).sort();
   var months = monthKeys.map(function(mk){
-    var sessionsInMonth = d.sessions.filter(function(s){ return s.date.slice(0,7) === mk; });
+    var sessionsInMonth = past.filter(function(s){ return s.date.slice(0,7) === mk; });
     var totalPossible = sessionsInMonth.length * d.players.length;
     var totalPresent = 0;
     sessionsInMonth.forEach(function(s){ totalPresent += (d.attendance[s.id]||[]).length; });
@@ -836,8 +912,81 @@ function escapeHtml(s){
   });
 }
 
+// ---------- Importación lista de buena fe ----------
+// Base: lista de buena fe (Excel). Vencimientos de ficha médica: planilla del club (imagen), cruzados por DNI.
+var BUENA_FE_DATA = [
+  {nombre:"Ignacio Lucas", apellido:"Maestre", dni:"41681135", nacimiento:"1998-11-23", obraSocial:"Caja de Abogados", telefono:"3512414800", vencimiento:"2027-01-29"},
+  {nombre:"Juan Ignacio", apellido:"Fernández", dni:"41721337", nacimiento:"1998-05-12", obraSocial:"Swiss Medical", telefono:"3516330192", vencimiento:"2027-01-21"},
+  {nombre:"Juan Cruz", apellido:"Álvarez", dni:"39302516", nacimiento:"1995-10-02", obraSocial:"OSDE", telefono:"3512159752", vencimiento:"2026-11-14"},
+  {nombre:"Marcelo", apellido:"Puma", dni:"42977426", nacimiento:"2000-09-19", obraSocial:"-", telefono:"3517416027", vencimiento:"2027-01-23"},
+  {nombre:"Lautaro Facundo", apellido:"Chiarini", dni:"39304313", nacimiento:"1995-10-10", obraSocial:"APROSS", telefono:"3512967296", vencimiento:"2027-03-27"},
+  {nombre:"Nahuel Lució", apellido:"Chiarini", dni:"40750240", nacimiento:"1997-11-04", obraSocial:"APROSS", telefono:"3512969188", vencimiento:"2027-02-03"},
+  {nombre:"Mariano", apellido:"Franchini", dni:"39693850", nacimiento:"1996-11-26", obraSocial:"OMINT", telefono:"3516224963", vencimiento:"2027-01-09"},
+  {nombre:"Maximiliano", apellido:"Díaz Novaro", dni:"41018182", nacimiento:"1998-03-17", obraSocial:"Camioneros", telefono:"3513343350", vencimiento:"2026-11-12"},
+  {nombre:"Nicolas", apellido:"Tapia", dni:"40109198", nacimiento:"1997-02-24", obraSocial:"Caja de Abogados", telefono:"3512854073", vencimiento:"2027-01-09"},
+  {nombre:"Mateo", apellido:"Freytes Agazzi", dni:"47172765", nacimiento:"2006-05-12", obraSocial:"DASPU", telefono:"3517364811", vencimiento:"2027-02-13"},
+  {nombre:"Sebastián Martín", apellido:"Urcelay", dni:"41224276", nacimiento:"1998-05-03", obraSocial:"Sancor", telefono:"3517163097", vencimiento:""},
+  {nombre:"Santiago", apellido:"Ponssa", dni:"42385678", nacimiento:"2000-03-21", obraSocial:"DASPU", telefono:"3513949481", vencimiento:"2027-02-18"},
+  {nombre:"Franco Andres", apellido:"Campos", dni:"46126789", nacimiento:"2005-07-23", obraSocial:"Apross", telefono:"3514599857", vencimiento:""},
+  {nombre:"Tobias Joaquín", apellido:"Micolini", dni:"41962677", nacimiento:"1999-06-23", obraSocial:"Apross", telefono:"3515940861", vencimiento:"2027-01-13"},
+  {nombre:"Santiago", apellido:"Álvarez", dni:"46505917", nacimiento:"2005-09-22", obraSocial:"OSDE", telefono:"3513440500", vencimiento:"2027-01-16"},
+  {nombre:"Franco", apellido:"Rossi", dni:"35674035", nacimiento:"1990-09-02", obraSocial:"Apross", telefono:"3515107027", vencimiento:"2027-02-24"},
+  {nombre:"Luciano", apellido:"Burgos", dni:"40963796", nacimiento:"1998-02-19", obraSocial:"Suvico", telefono:"3517024665", vencimiento:""},
+  {nombre:"Agustin", apellido:"Gomez", dni:"43560536", nacimiento:"2001-08-28", obraSocial:"Osuomra", telefono:"3517045219", vencimiento:"2027-02-19"},
+  {nombre:"Juan Ignacio", apellido:"D’Aloisio", dni:"39323079", nacimiento:"1996-02-07", obraSocial:"Integral", telefono:"3517609882", vencimiento:""},
+  {nombre:"Cesar Ariel", apellido:"Busos", dni:"39303792", nacimiento:"1995-10-25", obraSocial:"OMINT", telefono:"3512540061", vencimiento:""},
+  {nombre:"Javier Agustin", apellido:"Medah", dni:"39623912", nacimiento:"1996-08-05", obraSocial:"Caja de Abogados", telefono:"3517309149", vencimiento:"2027-02-12"},
+  {nombre:"Gaston", apellido:"Olmos", dni:"40106145", nacimiento:"1996-12-02", obraSocial:"Nobis", telefono:"3512507976", vencimiento:"2027-01-27"},
+  {nombre:"Stefano", apellido:"Schiaroli", dni:"39419723", nacimiento:"1996-03-29", obraSocial:"Swiss Medical", telefono:"3513472756", vencimiento:""},
+  {nombre:"Octavio", apellido:"Casih", dni:"42783064", nacimiento:"2000-08-23", obraSocial:"OMINT Empresa", telefono:"3513959378", vencimiento:""}
+];
+
+function normName(s){
+  return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z\s]/g,"").replace(/\s+/g," ").trim();
+}
+
+function importBuenaFe(){
+  var added = 0, updated = 0;
+  BUENA_FE_DATA.forEach(function(entry){
+    var fullName = (entry.nombre + " " + entry.apellido).trim();
+    var norm = normName(fullName);
+    var match = state.data.players.find(function(p){ return normName(p.name) === norm; });
+    if(!match){
+      // también probamos con el orden invertido (apellido nombre), por si ya estaba cargado así
+      var normRev = normName(entry.apellido + " " + entry.nombre);
+      match = state.data.players.find(function(p){ return normName(p.name) === normRev; });
+    }
+    if(match){
+      match.dni = entry.dni;
+      match.nacimiento = entry.nacimiento;
+      match.obraSocial = entry.obraSocial;
+      match.telefono = entry.telefono;
+      if(entry.vencimiento) match.vencimientoFicha = entry.vencimiento;
+      updated++;
+    } else {
+      state.data.players.push({
+        id: uid(), name: fullName, number: "", position: "Mediocampista", photo: null,
+        dni: entry.dni, nacimiento: entry.nacimiento, obraSocial: entry.obraSocial,
+        telefono: entry.telefono, vencimientoFicha: entry.vencimiento || ""
+      });
+      added++;
+    }
+  });
+  return { added: added, updated: updated };
+}
+
 // ---------- events ----------
 function bindTabEvents(){
+  var importBtn = document.getElementById("import-buenafe-btn");
+  if(importBtn) importBtn.onclick = async function(){
+    importBtn.disabled = true;
+    importBtn.textContent = "Importando...";
+    var result = importBuenaFe();
+    state.importMessage = "Listo: " + result.added + " jugador(es) agregado(s), " + result.updated + " actualizado(s).";
+    await persist();
+    render();
+  };
+
   var npPhotoBtn = document.getElementById("np-photo-btn");
   if(npPhotoBtn) npPhotoBtn.onclick = function(){ document.getElementById("np-photo-input").click(); };
 
