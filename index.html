@@ -221,7 +221,7 @@
 
 <nav class="tabs" id="tabs">
   <button data-tab="plantilla" class="active">Plantilla</button>
-  <button data-tab="buenafe">Buena Fe</button>
+  <button data-tab="fixture">Fixture</button>
   <button data-tab="asistencia">Asistencia</button>
   <button data-tab="semana">Semana</button>
   <button data-tab="historico">Histórico</button>
@@ -289,6 +289,7 @@ function defaultData(){
     sessions: [],
     attendance: {},
     dues: {},
+    fixture: [],
     adminPin: DEFAULT_PIN
   };
 }
@@ -338,6 +339,7 @@ function loadData(){
     }
     if(!state.data.players) state.data.players = [];
     if(!state.data.sessions) state.data.sessions = [];
+    if(!state.data.fixture) state.data.fixture = [];
     if(!state.data.attendance) state.data.attendance = {};
     if(!state.data.dues) state.data.dues = {};
     if(!state.data.adminPin) state.data.adminPin = DEFAULT_PIN;
@@ -519,7 +521,7 @@ function render(){
   var main = document.getElementById("main");
   if(!state.data){ main.innerHTML = '<div class="empty">Cargando…</div>'; return; }
   if(state.tab === "plantilla") main.innerHTML = renderPlantilla();
-  else if(state.tab === "buenafe") main.innerHTML = renderBuenaFe();
+  else if(state.tab === "fixture") main.innerHTML = renderFixture();
   else if(state.tab === "asistencia") main.innerHTML = renderAsistencia();
   else if(state.tab === "semana") main.innerHTML = renderSemana();
   else main.innerHTML = renderHistorico();
@@ -613,58 +615,67 @@ function renderPlantilla(){
 
   if(isAdmin()){
     html += '<div class="card">' +
+      '<p class="section-title">Importar lista de buena fe</p>' +
+      '<p class="hint">Carga o actualiza jugadores con DNI, obra social, teléfono y vencimiento de ficha médica desde la planilla del club. No borra a los que ya están cargados.</p>' +
+      '<button class="btn" id="import-buenafe-btn">Importar / actualizar datos</button>' +
+      (state.importMessage ? '<div class="hint" style="margin-top:6px;">' + escapeHtml(state.importMessage) + '</div>' : '') +
+    '</div>';
+    state.importMessage = null;
+
+    var dupes = findDuplicateGroups();
+    if(dupes.length){
+      html += '<div class="card">' +
+        '<p class="section-title">⚠ Posibles duplicados (' + dupes.length + ')</p>' +
+        '<p class="hint">Parecen ser la misma persona cargada dos veces. Fusionar combina los datos de ambos (DNI, obra social, foto, número, etc.) y borra el duplicado. No se pierde nada.</p>';
+      dupes.forEach(function(pair){
+        html += '<div class="player-row">' +
+          '<div class="p-info"><div class="p-name">' + escapeHtml(pair[0].name) + '</div>' +
+            '<div class="p-pos">¿es la misma persona que ' + escapeHtml(pair[1].name) + '?</div></div>' +
+          '<button class="btn btn-sm btn-primary" data-merge-a="' + pair[0].id + '" data-merge-b="' + pair[1].id + '">Fusionar</button>' +
+        '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  var bfSorted = d.players.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
+  var bfDisabled = isAdmin() ? '' : ' disabled';
+
+  html += '<div class="card">' +
+    '<div class="row-between">' +
+      '<p class="section-title">Lista de buena Fe (' + bfSorted.length + ')</p>' +
+      '<button class="btn btn-sm" id="export-excel-btn">⬇ Descargar Excel</button>' +
+    '</div>' +
+    '<p class="hint">' + (isAdmin() ? 'Tocá cualquier campo para editarlo. Se guarda solo, apenas salís del campo.' : 'Datos de contacto y ficha médica del club. Solo los administradores pueden editarlos.') + '</p>' +
+    '<div class="bf-wrap"><table class="bf-table"><thead><tr>' +
+      '<th>Jugador</th><th>DNI</th><th>Fecha nac.</th><th>Obra social</th><th>Teléfono</th><th>Vto. ficha méd.</th><th>Observación</th>' +
+    '</tr></thead><tbody>';
+
+  if(bfSorted.length === 0){
+    html += '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px;">Todavía no hay jugadores cargados.</td></tr>';
+  } else {
+    bfSorted.forEach(function(p){
+      html += '<tr>' +
+        '<td class="bf-name-cell">' + escapeHtml(p.name) + '</td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="dni" value="' + escapeHtml(p.dni || "") + '" inputmode="numeric"' + bfDisabled + '></td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="nacimiento" type="date" value="' + escapeHtml(p.nacimiento || "") + '"' + bfDisabled + '></td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="obraSocial" value="' + escapeHtml(p.obraSocial || "") + '"' + bfDisabled + '></td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="telefono" value="' + escapeHtml(p.telefono || "") + '" inputmode="tel"' + bfDisabled + '></td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="vencimientoFicha" type="date" value="' + escapeHtml(p.vencimientoFicha || "") + '"' + bfDisabled + '></td>' +
+        '<td><input data-bf-id="' + p.id + '" data-bf-field="observacionFicha" value="' + escapeHtml(p.observacionFicha || "") + '"' + bfDisabled + '></td>' +
+      '</tr>';
+    });
+  }
+  html += '</tbody></table></div></div>';
+
+  if(isAdmin()){
+    html += '<div class="card">' +
       '<div class="row-between">' +
         '<div><p class="section-title">PIN de administrador</p><p class="hint">Compartilo solo con quien vaya a tomar asistencia.</p></div>' +
         '<button class="btn btn-sm" id="change-pin-btn">Cambiar PIN</button>' +
       '</div>' +
     '</div>';
   }
-  return html;
-}
-
-// ---------- Buena Fe ----------
-function renderBuenaFe(){
-  var d = state.data;
-  if(!isAdmin()){
-    return '<div class="card"><div class="empty"><div class="ic">🔒</div>Esta sección tiene datos personales y médicos: entrá como administrador para verla.</div></div>';
-  }
-
-  var html = '<div class="card">' +
-    '<p class="section-title">Importar lista de buena fe</p>' +
-    '<p class="hint">Carga o actualiza jugadores con DNI, obra social, teléfono y vencimiento de ficha médica desde la planilla del club. No borra a los que ya están cargados.</p>' +
-    '<button class="btn" id="import-buenafe-btn">Importar / actualizar datos</button>' +
-    (state.importMessage ? '<div class="hint" style="margin-top:6px;">' + escapeHtml(state.importMessage) + '</div>' : '') +
-  '</div>';
-  state.importMessage = null;
-
-  var sorted = d.players.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
-
-  html += '<div class="card">' +
-    '<div class="row-between">' +
-      '<p class="section-title">Ficha médica y buena fe (' + sorted.length + ')</p>' +
-      '<button class="btn btn-sm" id="export-excel-btn">⬇ Descargar Excel</button>' +
-    '</div>' +
-    '<p class="hint">Tocá cualquier campo para editarlo. Se guarda solo, apenas salís del campo.</p>' +
-    '<div class="bf-wrap"><table class="bf-table"><thead><tr>' +
-      '<th>Jugador</th><th>DNI</th><th>Fecha nac.</th><th>Obra social</th><th>Teléfono</th><th>Vto. ficha méd.</th><th>Observación</th>' +
-    '</tr></thead><tbody>';
-
-  if(sorted.length === 0){
-    html += '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px;">Todavía no hay jugadores cargados.</td></tr>';
-  } else {
-    sorted.forEach(function(p){
-      html += '<tr>' +
-        '<td class="bf-name-cell">' + escapeHtml(p.name) + '</td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="dni" value="' + escapeHtml(p.dni || "") + '" inputmode="numeric"></td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="nacimiento" type="date" value="' + escapeHtml(p.nacimiento || "") + '"></td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="obraSocial" value="' + escapeHtml(p.obraSocial || "") + '"></td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="telefono" value="' + escapeHtml(p.telefono || "") + '" inputmode="tel"></td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="vencimientoFicha" type="date" value="' + escapeHtml(p.vencimientoFicha || "") + '"></td>' +
-        '<td><input data-bf-id="' + p.id + '" data-bf-field="observacionFicha" value="' + escapeHtml(p.observacionFicha || "") + '"></td>' +
-      '</tr>';
-    });
-  }
-  html += '</tbody></table></div></div>';
   return html;
 }
 
@@ -689,6 +700,94 @@ function exportBuenaFeExcel(){
   XLSX.utils.book_append_sheet(wb, ws, "Buena Fe");
   var today = todayISO();
   XLSX.writeFile(wb, "Lista_buena_fe_Alumni_" + today + ".xlsx");
+}
+
+// ---------- Fixture ----------
+var FIXTURE_DATA = [
+  {fecha:"1", dia:"2026-08-15", hora:"12:00", cancha:"3", rival:"Verde del Sur"},
+  {fecha:"2", dia:"2026-08-22", hora:"16:00", cancha:"4", rival:"Ateltico AG"},
+  {fecha:"3", dia:"2026-08-29", hora:"14:00", cancha:"6", rival:"Libano"},
+  {fecha:"4", dia:"2026-09-05", hora:"12:00", cancha:"9", rival:"Pelusa"},
+  {fecha:"5", dia:"2026-09-12", hora:"16:00", cancha:"10", rival:"Caglia"},
+  {fecha:"6", dia:"2026-09-19", hora:"10:00", cancha:"4", rival:"Libertad"},
+  {fecha:"7", dia:"2026-09-26", hora:"10:00", cancha:"6", rival:"Celta de Vino"},
+  {fecha:"8", dia:"2026-10-03", hora:"16:00", cancha:"8", rival:"Ati titi"},
+  {fecha:"9", dia:"2026-10-10", hora:"16:00", cancha:"11", rival:"Salvatore"},
+  {fecha:"10", dia:"2026-10-17", hora:"14:00", cancha:"3", rival:"Catedral"},
+  {fecha:"11", dia:"2026-10-24", hora:"10:00", cancha:"4", rival:"La Fragata"},
+  {fecha:"12", dia:"2026-10-31", hora:"16:00", cancha:"8", rival:"Estudiantes"},
+  {fecha:"13", dia:"2026-11-07", hora:"16:00", cancha:"10", rival:"Club Social"},
+  {fecha:"14", dia:"2026-11-14", hora:"10:00", cancha:"11", rival:"El Fortin"}
+];
+
+function importFixture(){
+  var added = 0, updated = 0;
+  FIXTURE_DATA.forEach(function(entry){
+    var match = state.data.fixture.find(function(f){ return String(f.fecha) === String(entry.fecha); });
+    if(match){
+      match.dia = entry.dia;
+      match.hora = entry.hora;
+      match.cancha = entry.cancha;
+      match.rival = entry.rival;
+      updated++;
+    } else {
+      state.data.fixture.push({
+        id: uid(), fecha: entry.fecha, dia: entry.dia, hora: entry.hora,
+        cancha: entry.cancha, rival: entry.rival, resultado: ""
+      });
+      added++;
+    }
+  });
+  return { added: added, updated: updated };
+}
+
+function renderFixture(){
+  var d = state.data;
+  var html = '';
+
+  if(isAdmin()){
+    html += '<div class="card">' +
+      '<p class="section-title">Importar fixture</p>' +
+      '<p class="hint">Carga o actualiza las fechas del campeonato. No borra resultados que ya hayas cargado.</p>' +
+      '<button class="btn" id="import-fixture-btn">Importar / actualizar fechas</button>' +
+      (state.fixtureMessage ? '<div class="hint" style="margin-top:6px;">' + escapeHtml(state.fixtureMessage) + '</div>' : '') +
+    '</div>';
+    state.fixtureMessage = null;
+  }
+
+  var sorted = d.fixture.slice().sort(function(a,b){ return (a.dia||"").localeCompare(b.dia||""); });
+  var disabled = isAdmin() ? '' : ' disabled';
+  var today = todayISO();
+
+  html += '<div class="card">' +
+    '<p class="section-title">Próximas fechas (' + sorted.length + ')</p>' +
+    '<p class="hint">' + (isAdmin() ? 'Tocá cualquier campo para editarlo: fecha, día, horario, cancha, rival o resultado.' : 'Programación del campeonato. Los resultados se van completando fecha a fecha.') + '</p>' +
+    '<div class="bf-wrap"><table class="bf-table"><thead><tr>' +
+      '<th>Fecha</th><th>Día</th><th>Hora</th><th>Cancha</th><th>Rival</th><th>Resultado</th>' + (isAdmin() ? '<th></th>' : '') +
+    '</tr></thead><tbody>';
+
+  if(sorted.length === 0){
+    html += '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px;">Todavía no hay fechas cargadas.</td></tr>';
+  } else {
+    sorted.forEach(function(f){
+      var isPast = f.dia && f.dia < today;
+      html += '<tr' + (isPast ? ' style="opacity:.55;"' : '') + '>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="fecha" value="' + escapeHtml(f.fecha || "") + '" style="width:40px;"' + disabled + '></td>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="dia" type="date" value="' + escapeHtml(f.dia || "") + '"' + disabled + '></td>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="hora" type="time" value="' + escapeHtml(f.hora || "") + '"' + disabled + '></td>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="cancha" value="' + escapeHtml(f.cancha || "") + '" style="width:46px;"' + disabled + '></td>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="rival" value="' + escapeHtml(f.rival || "") + '"' + disabled + '></td>' +
+        '<td><input data-fx-id="' + f.id + '" data-fx-field="resultado" placeholder="ej. 2-1" value="' + escapeHtml(f.resultado || "") + '"' + disabled + '></td>' +
+        (isAdmin() ? '<td><button class="btn btn-sm btn-danger" data-fx-del="' + f.id + '">✕</button></td>' : '') +
+      '</tr>';
+    });
+  }
+  html += '</tbody></table></div>';
+  if(isAdmin()){
+    html += '<button class="btn btn-sm" id="add-fixture-btn" style="margin-top:10px;">+ Agregar fecha</button>';
+  }
+  html += '</div>';
+  return html;
 }
 
 // ---------- Asistencia ----------
@@ -1014,17 +1113,27 @@ function normName(s){
   return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z\s]/g,"").replace(/\s+/g," ").trim();
 }
 
+function nameTokens(s){
+  return normName(s).split(" ").filter(Boolean);
+}
+
+// Compara dos nombres completos de forma flexible: no exige que sean idénticos,
+// alcanza con que coincida el primer nombre y el apellido (ignora nombres del medio, orden, tildes).
+function namesLikelyMatch(nameA, nameB){
+  var a = nameTokens(nameA), b = nameTokens(nameB);
+  if(a.length < 1 || b.length < 1) return false;
+  var firstMatch = a[0] === b[0] || a.indexOf(b[0]) > -1 || b.indexOf(a[0]) > -1;
+  if(!firstMatch) return false;
+  var lastA = a[a.length-1], lastB = b[b.length-1];
+  var lastMatch = lastA === lastB || a.indexOf(lastB) > -1 || b.indexOf(lastA) > -1;
+  return lastMatch;
+}
+
 function importBuenaFe(){
   var added = 0, updated = 0;
   BUENA_FE_DATA.forEach(function(entry){
     var fullName = (entry.nombre + " " + entry.apellido).trim();
-    var norm = normName(fullName);
-    var match = state.data.players.find(function(p){ return normName(p.name) === norm; });
-    if(!match){
-      // también probamos con el orden invertido (apellido nombre), por si ya estaba cargado así
-      var normRev = normName(entry.apellido + " " + entry.nombre);
-      match = state.data.players.find(function(p){ return normName(p.name) === normRev; });
-    }
+    var match = state.data.players.find(function(p){ return namesLikelyMatch(p.name, fullName); });
     if(match){
       match.dni = entry.dni;
       match.nacimiento = entry.nacimiento;
@@ -1044,6 +1153,49 @@ function importBuenaFe(){
   return { added: added, updated: updated };
 }
 
+// ---------- Fusión de duplicados ----------
+function findDuplicateGroups(){
+  var players = state.data.players;
+  var pairs = [];
+  var used = {};
+  for(var i=0;i<players.length;i++){
+    for(var j=i+1;j<players.length;j++){
+      if(used[players[j].id]) continue;
+      if(namesLikelyMatch(players[i].name, players[j].name)){
+        pairs.push([players[i], players[j]]);
+        used[players[j].id] = true;
+      }
+    }
+  }
+  return pairs;
+}
+
+function mergePlayers(keepId, removeId){
+  var d = state.data;
+  var keep = d.players.find(function(p){ return p.id === keepId; });
+  var remove = d.players.find(function(p){ return p.id === removeId; });
+  if(!keep || !remove) return;
+  ["dni","nacimiento","obraSocial","telefono","vencimientoFicha","observacionFicha","photo","number","position"].forEach(function(f){
+    if(!keep[f] && remove[f]) keep[f] = remove[f];
+  });
+  if(remove.name && remove.name.length > keep.name.length) keep.name = remove.name;
+  Object.keys(d.attendance || {}).forEach(function(sessionId){
+    var arr = d.attendance[sessionId];
+    if(!arr) return;
+    var hadRemove = arr.indexOf(removeId) > -1;
+    d.attendance[sessionId] = arr.filter(function(id){ return id !== removeId; });
+    if(hadRemove && d.attendance[sessionId].indexOf(keepId) === -1) d.attendance[sessionId].push(keepId);
+  });
+  Object.keys(d.dues || {}).forEach(function(monthKey){
+    var arr = d.dues[monthKey];
+    if(!arr) return;
+    var hadRemove = arr.indexOf(removeId) > -1;
+    d.dues[monthKey] = arr.filter(function(id){ return id !== removeId; });
+    if(hadRemove && d.dues[monthKey].indexOf(keepId) === -1) d.dues[monthKey].push(keepId);
+  });
+  d.players = d.players.filter(function(p){ return p.id !== removeId; });
+}
+
 // ---------- events ----------
 function bindTabEvents(){
   var importBtn = document.getElementById("import-buenafe-btn");
@@ -1058,6 +1210,48 @@ function bindTabEvents(){
 
   var exportBtn = document.getElementById("export-excel-btn");
   if(exportBtn) exportBtn.onclick = function(){ exportBuenaFeExcel(); };
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-merge-a]"), function(btn){
+    btn.onclick = async function(){
+      mergePlayers(btn.dataset.mergeA, btn.dataset.mergeB);
+      await persist();
+      render();
+    };
+  });
+
+  var importFixtureBtn = document.getElementById("import-fixture-btn");
+  if(importFixtureBtn) importFixtureBtn.onclick = async function(){
+    importFixtureBtn.disabled = true;
+    importFixtureBtn.textContent = "Importando...";
+    var result = importFixture();
+    state.fixtureMessage = "Listo: " + result.added + " fecha(s) agregada(s), " + result.updated + " actualizada(s).";
+    await persist();
+    render();
+  };
+
+  var addFixtureBtn = document.getElementById("add-fixture-btn");
+  if(addFixtureBtn) addFixtureBtn.onclick = async function(){
+    state.data.fixture.push({ id: uid(), fecha: String(state.data.fixture.length + 1), dia: "", hora: "", cancha: "", rival: "", resultado: "" });
+    await persist();
+    render();
+  };
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-fx-id]"), function(input){
+    input.onchange = async function(){
+      var f = state.data.fixture.find(function(fx){ return fx.id === input.dataset.fxId; });
+      if(!f) return;
+      f[input.dataset.fxField] = input.value.trim();
+      await persist();
+    };
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-fx-del]"), function(btn){
+    btn.onclick = async function(){
+      state.data.fixture = state.data.fixture.filter(function(f){ return f.id !== btn.dataset.fxDel; });
+      await persist();
+      render();
+    };
+  });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-bf-id]"), function(input){
     input.onchange = async function(){
