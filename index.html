@@ -611,36 +611,23 @@ function renderPlantilla(){
   }
 
   html += '<div class="card">' +
-    '<div class="row-between"><p class="section-title">Plantel (' + d.players.length + ')</p>' +
-    '<span class="hint" style="margin:0;">Cuota de ' + monthLabel(monthKeyNow()).toLowerCase() + '</span></div>';
+    '<p class="section-title">Plantel (' + d.players.length + ')</p>';
 
   if(d.players.length === 0){
     html += '<div class="empty"><div class="ic">👕</div>Todavía no hay jugadores cargados.</div>';
   } else {
-    var currentMonth = monthKeyNow();
-    var paidThisMonth = d.dues[currentMonth] || [];
     var sorted = d.players.slice().sort(function(a,b){ return a.name.localeCompare(b.name); });
     sorted.forEach(function(p){
-      var paid = paidThisMonth.indexOf(p.id) > -1;
       html += '<div class="player-row">' +
         '<div class="jersey" style="' + (p.photo ? 'background-image:url('+p.photo+');' : '') + '">' + (p.photo ? '' : (p.number || "-")) + '</div>' +
         '<div class="p-info"><div class="p-name">' + escapeHtml(p.name) + '</div><div class="p-pos">' + escapeHtml(p.position) + '</div></div>' +
-        '<div class="row-actions">' +
-          (p.exentoCuota
-            ? '<span class="status-pill status-gray">N/A</span>'
-            : ('<span class="status-pill ' + (paid ? 'status-green' : 'status-risk') + '"' +
-                (isAdmin() ? ' data-toggle-dues="' + p.id + '" style="cursor:pointer;"' : '') +
-                ' title="' + (isAdmin() ? 'Tocar para cambiar' : '') + '">' + (paid ? 'Pagó' : 'Debe') + '</span>')
-          );
+        '<div class="row-actions">';
       if(isAdmin()){
         html += '<button class="btn btn-sm" data-edit-player="' + p.id + '">Editar</button>' +
           '<button class="btn btn-sm btn-danger" data-del-player="' + p.id + '">Quitar</button>';
       }
       html += '</div></div>';
     });
-  }
-  if(isAdmin() && d.players.length > 0){
-    html += '<p class="hint">Como administrador, tocá "Pagó" / "Debe" para cambiar el estado de la cuota de este mes.</p>';
   }
   html += '</div>';
 
@@ -1055,16 +1042,9 @@ function monthShortLabel(mk){
   return label.charAt(0).toUpperCase() + label.slice(1) + " " + parts[0].slice(2);
 }
 
-// Meses a mostrar en la grilla de cuotas: el actual, el anterior, y cualquier mes anterior que ya tenga cuotas registradas.
+// Meses de la temporada a mostrar en la grilla de cuotas: julio a diciembre.
 function duesMonthsWindow(){
-  var monthsSet = {};
-  Object.keys(state.data.dues || {}).forEach(function(mk){ monthsSet[mk] = true; });
-  monthsSet[monthKeyNow()] = true;
-  var dt = new Date(todayISO()+"T00:00:00");
-  var prev = new Date(dt.getFullYear(), dt.getMonth()-1, 1);
-  var prevKey = prev.getFullYear() + "-" + String(prev.getMonth()+1).padStart(2,"0");
-  monthsSet[prevKey] = true;
-  return Object.keys(monthsSet).sort();
+  return ["2026-07","2026-08","2026-09","2026-10","2026-11","2026-12"];
 }
 
 function computeHistoricalStats(){
@@ -1375,19 +1355,6 @@ function bindTabEvents(){
     btn.onclick = async function(){
       var id = btn.getAttribute("data-del-player");
       state.data.players = state.data.players.filter(function(p){ return p.id !== id; });
-      await persist();
-      render();
-    };
-  });
-
-  Array.prototype.forEach.call(document.querySelectorAll("[data-toggle-dues]"), function(el){
-    el.onclick = async function(){
-      var id = el.getAttribute("data-toggle-dues");
-      var mk = monthKeyNow();
-      if(!state.data.dues[mk]) state.data.dues[mk] = [];
-      var idx = state.data.dues[mk].indexOf(id);
-      if(idx > -1) state.data.dues[mk].splice(idx,1);
-      else state.data.dues[mk].push(id);
       await persist();
       render();
     };
