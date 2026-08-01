@@ -35,6 +35,10 @@
   a{color:inherit;}
   button{ font-family:'Inter',sans-serif; cursor:pointer; }
 
+  .app-topbar{
+    position:sticky; top:0; z-index:50;
+    box-shadow:0 2px 8px rgba(0,0,0,0.15);
+  }
   header.top{
     background:var(--pitch);
     color:#EFEFE6;
@@ -202,6 +206,7 @@
 </head>
 <body>
 
+<div class="app-topbar">
 <header class="top">
   <div class="top-row">
     <div class="brand">
@@ -226,6 +231,7 @@
   <button data-tab="semana">Semana</button>
   <button data-tab="historico">Histórico</button>
 </nav>
+</div>
 
 <main id="main">
   <div class="empty"><div class="ic">⏳</div>Cargando datos del equipo…</div>
